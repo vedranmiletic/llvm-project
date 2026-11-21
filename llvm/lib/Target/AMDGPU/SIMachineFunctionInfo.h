@@ -593,6 +593,11 @@ private:
 
   bool IsWholeWaveFunction = false;
 
+  // Whether this is an entry function that does not set up flat scratch but
+  // makes indirect or external calls, on a target where the FLAT_SCRATCH SGPRs
+  // assumed for such calls count towards its limited total number of SGPRs.
+  bool NeedsFlatScratchSGPRsForCalls = false;
+
   using PrologEpilogSGPRSpill =
       std::pair<Register, PrologEpilogSGPRSaveRestoreInfo>;
   // To track the SGPR spill method used for a CSR SGPR register during
@@ -704,6 +709,10 @@ public:
   }
 
   bool isWholeWaveFunction() const { return IsWholeWaveFunction; }
+
+  bool needsFlatScratchSGPRsForCalls() const {
+    return NeedsFlatScratchSGPRsForCalls;
+  }
 
   ArrayRef<PrologEpilogSGPRSpill> getPrologEpilogSGPRSpills() const {
     assert(is_sorted(PrologEpilogSGPRSpills, llvm::less_first()));

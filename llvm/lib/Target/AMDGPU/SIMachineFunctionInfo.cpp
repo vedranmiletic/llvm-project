@@ -20,6 +20,8 @@
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/InstrTypes.h"
 #include <cassert>
 #include <optional>
 
@@ -75,6 +77,25 @@ SIMachineFunctionInfo::SIMachineFunctionInfo(const Function &F,
     WorkItemIDX = true;
   } else if (CC == CallingConv::AMDGPU_PS) {
     PSInputAddr = AMDGPU::getInitialPSInputAddr(F);
+  }
+
+  // AMDGPUResourceUsageAnalysis assumes that indirect and external callees use
+  // flat scratch, so the FLAT_SCRATCH SGPRs count towards the total number of
+  // SGPRs of an entry function making such calls. Where that total is limited,
+  // an entry function that does not set up flat scratch itself must reserve
+  // them as well. In object linking mode, that assumption is not made.
+  if (isEntryFunction() && ST.hasLimitedTotalNumSGPRs() &&
+      ST.hasFlatAddressSpace() && !UserSGPRInfo.hasFlatScratchInit() &&
+      !AMDGPUTargetMachine::EnableObjectLinking) {
+    NeedsFlatScratchSGPRsForCalls =
+        any_of(instructions(F), [](const Instruction &I) {
+          const auto *CB = dyn_cast<CallBase>(&I);
+          if (!CB || CB->isInlineAsm())
+            return false;
+          const auto *Callee =
+              dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
+          return !Callee || (Callee->isDeclaration() && !Callee->isIntrinsic());
+        });
   }
 
   if (ST.hasGFX90AInsts()) {
